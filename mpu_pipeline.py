@@ -4,20 +4,18 @@ import threading
 import urllib.request
 import time
 
-PC_IP        = '0.0.0.0'
-LISTEN_PORT  = 5005
-UE1_IP       = '12.1.1.2'
-UE_PORT      = 6001
-
-# UPDATE THIS after Render deployment
-RENDER_URL   = 'https://YOUR-APP.onrender.com/data'
+PC_IP       = '0.0.0.0'
+LISTEN_PORT = 5005
+UE1_IP      = '12.1.1.3'
+UE_PORT     = 6001
+RENDER_URL  = 'https://sensor-dashboard-jqak.onrender.com/data'
 
 def send_to_ue1(msg):
     python_cmd = (
         'import socket;'
         's=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);'
-        's.bind(("12.1.1.2",0));'
-        f's.sendto("{msg}".encode("utf-8"),("12.1.1.2",6001))'
+        's.bind(("12.1.1.3",0));'
+        f's.sendto("{msg}".encode("utf-8"),("12.1.1.3",6001))'
     )
     subprocess.run([
         'sudo', 'docker', 'exec', 'rfsim5g-oai-nr-ue',
@@ -33,7 +31,7 @@ def send_to_render(msg):
             method='POST',
             headers={'Content-Type': 'text/plain'}
         )
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=15)
         print(f"[CLOUD] Sent to Render")
     except Exception as e:
         print(f"[CLOUD ERROR] {e}")
@@ -53,7 +51,6 @@ def handle_client(conn, addr):
             payload = raw.strip()
         if payload:
             print(f"[ARDUINO] {payload}")
-            # Send to UE1 and Render simultaneously
             t1 = threading.Thread(target=send_to_ue1,    args=(payload,))
             t2 = threading.Thread(target=send_to_render, args=(payload,))
             t1.start()

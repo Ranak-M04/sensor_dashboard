@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5G IoT Sensor Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0e1a; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 10px; }
+  h1 { text-align: center; color: #00d4ff; padding: 15px 0 5px; font-size: 1.4em; }
+  h2 { text-align: center; color: #aaa; font-size: 0.85em; margin-bottom: 15px; }
+
+  .latency-bar {
+    display: flex; justify-content: center; gap: 15px;
+    flex-wrap: wrap; margin-bottom: 15px;
+  }
+  .latency-box {
+    background: #16213e; border-radius: 10px;
+    padding: 12px 20px; text-align: center;
+    border: 1px solid #00d4ff44;
+  }
+  .latency-box .val { font-size: 1.6em; font-weight: bold; color: #00ff88; }
+  .latency-box .lbl { font-size: 0.75em; color: #aaa; margin-top: 4px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px; margin-bottom: 15px;
+  }
+  .card {
+    background: #16213e; border-radius: 10px;
+    padding: 12px; text-align: center;
+    border: 1px solid #ffffff11;
+  }
+  .card .val { font-size: 1.4em; font-weight: bold; color: #00d4ff; }
+  .card .lbl { font-size: 0.75em; color: #aaa; margin-top: 4px; }
+
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chart-box {
+    background: #16213e; border-radius: 10px;
+    padding: 12px; border: 1px solid #ffffff11;
+  }
+  .chart-box h3 { color: #00d4ff; font-size: 0.85em; margin-bottom: 8px; text-align: center; }
+
+  .status { text-align: center; font-size: 0.75em; color: #aaa; margin-top: 10px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #00ff88; margin-right: 5px; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  @media(max-width:600px){ .charts{ grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>5G IoT Sensor Dashboard</h1>
+<h2>Arduino → UE1 → 5G Core → Cloud → Phone</h2>
+
+<div class="latency-bar">
+  <div class="latency-box">
+    <div class="val" id="lat-cloud">--</div>
+    <div class="lbl">Arduino → Cloud (ms)</div>
+  </div>
+  <div class="latency-box">
+    <div class="val" id="lat-phone">--</div>
+    <div class="lbl">Arduino → Phone (ms)</div>
+  </div>
+  <div class="latency-box">
+    <div class="val" id="timestamp">--</div>
+    <div class="lbl">Last Update</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card"><div class="val" id="ax">--</div><div class="lbl">AX (Accel X)</div></div>
+  <div class="card"><div class="val" id="ay">--</div><div class="lbl">AY (Accel Y)</div></div>
+  <div class="card"><div class="val" id="az">--</div><div class="lbl">AZ (Accel Z)</div></div>
+  <div class="card"><div class="val" id="gx">--</div><div class="lbl">GX (Gyro X)</div></div>
+  <div class="card"><div class="val" id="gy">--</div><div class="lbl">GY (Gyro Y)</div></div>
+  <div class="card"><div class="val" id="gz">--</div><div class="lbl">GZ (Gyro Z)</div></div>
+  <div class="card"><div class="val" id="fsr2">--</div><div class="lbl">FSR2</div></div>
+  <div class="card"><div class="val" id="fsr3">--</div><div class="lbl">FSR3</div></div>
+  <div class="card"><div class="val" id="fsr4">--</div><div class="lbl">FSR4</div></div>
+  <div class="card"><div class="val" id="fsr_total">--</div><div class="lbl">FSR Total</div></div>
+  <div class="card"><div class="val" id="flex1">--</div><div class="lbl">FLEX1</div></div>
+  <div class="card"><div class="val" id="time">--</div><div class="lbl">Arduino Time (ms)</div></div>
+</div>
+
+<div class="charts">
+  <div class="chart-box"><h3>Accelerometer</h3><canvas id="accelChart"></canvas></div>
+  <div class="chart-box"><h3>Gyroscope</h3><canvas id="gyroChart"></canvas></div>
+  <div class="chart-box"><h3>FSR Sensors</h3><canvas id="fsrChart"></canvas></div>
+  <div class="chart-box"><h3>Latency (ms)</h3><canvas id="latChart"></canvas></div>
+</div>
+
+<div class="status"><span class="dot"></span>Live — updates every 2s</div>
+
+<script>
+const MAX = 20;
+const labels = [];
+const accelData = { ax:[], ay:[], az:[] };
+const gyroData  = { gx:[], gy:[], gz:[] };
+const fsrData   = { fsr2:[], fsr3:[], fsr4:[] };
+const latData   = { cloud:[], phone:[] };
+
+function makeChart(id, datasets, yLabel) {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: { legend: { labels: { color: '#aaa', font: { size: 10 } } } },
+      scales: {
+        x: { ticks: { color: '#666', maxTicksLimit: 5 }, grid: { color: '#ffffff11' } },
+        y: { ticks: { color: '#aaa' }, grid: { color: '#ffffff11' }, title: { display: false } }
+      }
+    }
+  });
+}
+
+const accelChart = makeChart('accelChart', [
+  { label:'AX', data: accelData.ax, borderColor:'#ff6384', tension:0.3, pointRadius:0 },
+  { label:'AY', data: accelData.ay, borderColor:'#36a2eb', tension:0.3, pointRadius:0 },
+  { label:'AZ', data: accelData.az, borderColor:'#ffce56', tension:0.3, pointRadius:0 }
+]);
+
+const gyroChart = makeChart('gyroChart', [
+  { label:'GX', data: gyroData.gx, borderColor:'#ff6384', tension:0.3, pointRadius:0 },
+  { label:'GY', data: gyroData.gy, borderColor:'#36a2eb', tension:0.3, pointRadius:0 },
+  { label:'GZ', data: gyroData.gz, borderColor:'#ffce56', tension:0.3, pointRadius:0 }
+]);
+
+const fsrChart = makeChart('fsrChart', [
+  { label:'FSR2', data: fsrData.fsr2, borderColor:'#ff6384', tension:0.3, pointRadius:0 },
+  { label:'FSR3', data: fsrData.fsr3, borderColor:'#36a2eb', tension:0.3, pointRadius:0 },
+  { label:'FSR4', data: fsrData.fsr4, borderColor:'#ffce56', tension:0.3, pointRadius:0 }
+]);
+
+const latChart = makeChart('latChart', [
+  { label:'→ Cloud', data: latData.cloud, borderColor:'#00ff88', tension:0.3, pointRadius:0 },
+  { label:'→ Phone', data: latData.phone, borderColor:'#ff6384', tension:0.3, pointRadius:0 }
+]);
+
+function push(arr, val) {
+  arr.push(val);
+  if (arr.length > MAX) arr.shift();
+}
+
+async function update() {
+  try {
+    const phoneRequestTime = Date.now();
+    const res  = await fetch('/api/latest');
+    const data = await res.json();
+    const phoneReceiveTime = Date.now();
+
+    if (!data.TIME) return;
+
+    const arduinoTime  = parseInt(data.ARDUINO_TIME);
+    const latCloud     = data.LATENCY_ARDUINO_TO_CLOUD_MS;
+    const latPhone     = phoneReceiveTime - arduinoTime;
+    const ts           = data.TIMESTAMP.split(' ')[1];
+
+    // Update cards
+    document.getElementById('ax').textContent        = data.AX;
+    document.getElementById('ay').textContent        = data.AY;
+    document.getElementById('az').textContent        = data.AZ;
+    document.getElementById('gx').textContent        = data.GX;
+    document.getElementById('gy').textContent        = data.GY;
+    document.getElementById('gz').textContent        = data.GZ;
+    document.getElementById('fsr2').textContent      = data.FSR2;
+    document.getElementById('fsr3').textContent      = data.FSR3;
+    document.getElementById('fsr4').textContent      = data.FSR4;
+    document.getElementById('fsr_total').textContent = data.FSR_TOTAL;
+    document.getElementById('flex1').textContent     = data.FLEX1;
+    document.getElementById('time').textContent      = data.TIME;
+    document.getElementById('lat-cloud').textContent = latCloud + ' ms';
+    document.getElementById('lat-phone').textContent = latPhone + ' ms';
+    document.getElementById('timestamp').textContent = ts;
+
+    // Update charts
+    push(labels,         ts);
+    push(accelData.ax,   parseInt(data.AX));
+    push(accelData.ay,   parseInt(data.AY));
+    push(accelData.az,   parseInt(data.AZ));
+    push(gyroData.gx,    parseInt(data.GX));
+    push(gyroData.gy,    parseInt(data.GY));
+    push(gyroData.gz,    parseInt(data.GZ));
+    push(fsrData.fsr2,   parseInt(data.FSR2));
+    push(fsrData.fsr3,   parseInt(data.FSR3));
+    push(fsrData.fsr4,   parseInt(data.FSR4));
+    push(latData.cloud,  parseInt(latCloud));
+    push(latData.phone,  parseInt(latPhone));
+
+    accelChart.update();
+    gyroChart.update();
+    fsrChart.update();
+    latChart.update();
+
+  } catch(e) { console.log('fetch error', e); }
+}
+
+setInterval(update, 2000);
+update();
+</script>
+</body>
+</html>

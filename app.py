@@ -1,20 +1,30 @@
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime
-import json
 import threading
 
 app = Flask(__name__)
 
-# Store latest data and history
 latest  = {}
 history = []
 lock    = threading.Lock()
 
-MAX_HISTORY = 50  # keep last 50 readings
+MAX_HISTORY = 50
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', active='overview')
+
+@app.route('/motion')
+def motion():
+    return render_template('motion.html', active='motion')
+
+@app.route('/pressure')
+def pressure():
+    return render_template('pressure.html', active='pressure')
+
+@app.route('/network')
+def network():
+    return render_template('network.html', active='network')
 
 @app.route('/data', methods=['POST'])
 def receive_data():
@@ -27,9 +37,9 @@ def receive_data():
         latency_ms   = server_time - arduino_time
 
         entry = {f: v for f, v in zip(fields, values)}
-        entry['TIMESTAMP']        = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entry['SERVER_TIME']      = server_time
-        entry['ARDUINO_TIME']     = arduino_time
+        entry['TIMESTAMP']                   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry['SERVER_TIME']                 = server_time
+        entry['ARDUINO_TIME']                = arduino_time
         entry['LATENCY_ARDUINO_TO_CLOUD_MS'] = latency_ms
 
         with lock:
