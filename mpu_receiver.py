@@ -15,10 +15,11 @@ GMAIL_USER  = "ranak015m@gmail.com"
 GMAIL_PASS  = "tftzpwualawcshny"
 PHONE_EMAIL = "8777357142@jiophone.net"
 
-SMS_INTERVAL  = 600
-last_sms_time = 0
+SMS_INTERVAL   = 600
+last_sms_time  = 0
+last_recv_time = None
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('0.0.0.0', 6001))
 phone = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -26,7 +27,7 @@ file_exists = os.path.isfile(CSV_FILE)
 csvfile = open(CSV_FILE, 'a', newline='')
 writer  = csv.writer(csvfile)
 if not file_exists:
-    writer.writerow(["TIMESTAMP"] + FIELDS + ["LATENCY_ARDUINO_TO_UE1_MS"])
+    writer.writerow(["TIMESTAMP"] + FIELDS + ["LATENCY_MS"])
     csvfile.flush()
 
 def send_sms(data, latency):
@@ -37,7 +38,7 @@ AX:{data['AX']} AY:{data['AY']} AZ:{data['AZ']}
 GX:{data['GX']} GY:{data['GY']} GZ:{data['GZ']}
 FSR Total:{data['FSR_TOTAL']}
 Flex:{data['FLEX1']}
-Latency UE1:{latency}ms"""
+Latency:{latency}ms"""
         msg            = MIMEText(msg_body)
         msg['From']    = GMAIL_USER
         msg['To']      = PHONE_EMAIL
@@ -45,27 +46,31 @@ Latency UE1:{latency}ms"""
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(GMAIL_USER, GMAIL_PASS)
             server.send_message(msg)
-        print(f"[SMS] Sent to {PHONE_EMAIL}")
+        print("[SMS] Sent!")
     except Exception as e:
         print(f"[SMS ERROR] {e}")
 
 print("=" * 60)
 print("  UE1 ROOT BASH - Sensor Receiver")
 print(f"  CSV   : {CSV_FILE}")
-print(f"  SMS   : every 10 mins to {PHONE_EMAIL}")
+print(f"  SMS   : every 10 mins")
 print("=" * 60)
 
 while True:
     data, addr   = sock.recvfrom(4096)
-    receive_time = int(datetime.now().timestamp() * 1000)
+    recv_time    = datetime.now()
     msg          = data.decode('utf-8', errors='ignore').strip()
     values       = msg.split(',')
 
     if len(values) == len(FIELDS):
-        arduino_time = int(values[0])
-        latency_ms   = receive_time - arduino_time
-        timestamp    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entry        = {f: v for f, v in zip(FIELDS, values)}
+        if last_recv_time is not None:
+            latency_ms = int((recv_time - last_recv_time).total_seconds() * 1000)
+        else:
+            latency_ms = 0
+        last_recv_time = recv_time
+
+        timestamp = recv_time.strftime("%Y-%m-%d %H:%M:%S")
+        entry     = {f: v for f, v in zip(FIELDS, values)}
 
         writer.writerow([timestamp] + values + [latency_ms])
         csvfile.flush()
@@ -74,10 +79,9 @@ while True:
         print(f"  TIMESTAMP       : {timestamp}")
         for field, val in zip(FIELDS, values):
             print(f"  {field:<12}    : {val}")
-        print(f"  LATENCY(A→UE1) : {latency_ms} ms")
+        print(f"  LATENCY         : {latency_ms} ms")
 
-        msg_with_lat = msg + f",{latency_ms}"
-        phone.sendto(msg_with_lat.encode('utf-8'), (PHONE_IP, PHONE_PORT))
+        phone.sendto((msg + f",{latency_ms}").encode('utf-8'), (PHONE_IP, PHONE_PORT))
 
         now = datetime.now().timestamp()
         if now - last_sms_time >= SMS_INTERVAL:
