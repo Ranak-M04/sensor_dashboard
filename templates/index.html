@@ -157,7 +157,7 @@ async function update() {
 
     const arduinoTime  = parseInt(data.ARDUINO_TIME);
     const latCloud     = data.LATENCY_ARDUINO_TO_CLOUD_MS;
-    const latPhone     = phoneReceiveTime - arduinoTime;
+    const latPhone     = phoneReceiveTime - parseInt(data.SERVER_TIME_MS);
     const ts           = data.TIMESTAMP.split(' ')[1];
 
     // Update cards
