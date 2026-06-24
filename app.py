@@ -7,7 +7,6 @@ app = Flask(__name__)
 latest  = {}
 history = []
 lock    = threading.Lock()
-
 MAX_HISTORY = 50
 
 @app.route('/')
@@ -29,18 +28,19 @@ def network():
 @app.route('/data', methods=['POST'])
 def receive_data():
     raw = request.data.decode('utf-8').strip()
-    fields = ["TIME","FSR2","FSR3","FSR4","FSR_TOTAL","FLEX1","AX","AY","AZ","GX","GY","GZ"]
+    fields = ["TIME","FSR2","FSR3","FSR4","FSR_TOTAL","FLEX1","AX","AY","AZ","GX","GY","GZ","PC_RECV_MS"]
     values = raw.split(',')
     if len(values) == len(fields):
-        arduino_time = int(values[0])
-        server_time  = int(datetime.now().timestamp() * 1000)
-        latency_ms   = server_time - arduino_time
+        cloud_recv_ms = int(datetime.now().timestamp() * 1000)
+        pc_recv_ms    = int(values[12])
+        latency_ms    = cloud_recv_ms - pc_recv_ms  # real PC→Cloud latency
 
-        entry = {f: v for f, v in zip(fields, values)}
+        entry = {f: v for f, v in zip(fields[:12], values[:12])}
         entry['TIMESTAMP']                   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entry['SERVER_TIME']                 = server_time
-        entry['ARDUINO_TIME']                = arduino_time
+        entry['SERVER_TIME_MS']              = cloud_recv_ms
+        entry['PC_RECV_MS']                  = pc_recv_ms
         entry['LATENCY_ARDUINO_TO_CLOUD_MS'] = latency_ms
+        entry['ARDUINO_TIME']                = values[0]
 
         with lock:
             global latest, history
@@ -49,7 +49,7 @@ def receive_data():
             if len(history) > MAX_HISTORY:
                 history.pop(0)
 
-        print(f"[DATA] {entry['TIMESTAMP']} | Latency: {latency_ms}ms | {raw}")
+        print(f"[DATA] {entry['TIMESTAMP']} | PC→Cloud: {latency_ms}ms")
     return 'OK', 200
 
 @app.route('/api/latest')
